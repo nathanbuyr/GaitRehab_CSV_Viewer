@@ -8,15 +8,14 @@ export interface ParsedCsvFile {
 }
 
 export const expectedColumns = [
-  'timestamp',
-  'completion',
+  'timestamp_utc',
+  'completion_title',
   'distance',
   'elapsed_s',
-  'avg_speed',
+  'avg_speed_mps',
   'pace_s_per',
-  'on_course',
+  'on_course_percent',
   'off_course',
-  'off_course_drift',
   'drift_avg',
   'drift_max',
   'app_version',
