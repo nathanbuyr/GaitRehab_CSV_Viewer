@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react'
+import { useState } from 'react'
 import { parseCsvFile } from './lib/csv'
 import type { ParsedCsvFile } from './types/sessionData'
 import { expectedColumns } from './types/sessionData'
@@ -6,56 +6,104 @@ import './App.css'
 
 type PreviewRow = Record<string, string>
 
+function getNumber(row: PreviewRow, key: string): number | null {
+  const rawValue = row[key]
+
+  if (!rawValue) {
+    return null
+  }
+
+  const value = Number.parseFloat(rawValue)
+  if (Number.isNaN(value)) {
+    return null
+  }
+
+  return value
+}
+
 function App() {
   const [parsedFiles, setParsedFiles] = useState<ParsedCsvFile[]>([])
   const [isParsing, setIsParsing] = useState(false)
   const [parseError, setParseError] = useState<string | null>(null)
 
-  const allHeaders = useMemo(() => {
-    const headers = new Set<string>()
+  const allHeaders: string[] = []
+  const allRows: PreviewRow[] = []
+  const parsingWarnings: string[] = []
+  let totalRows = 0
 
-    parsedFiles.forEach((file) => {
-      file.headers.forEach((header) => headers.add(header))
-    })
+  for (const file of parsedFiles) {
+    totalRows += file.rows.length
 
-    return Array.from(headers)
-  }, [parsedFiles])
+    for (const warning of file.warnings) {
+      parsingWarnings.push(`${file.fileName}: ${warning}`)
+    }
 
-  const previewHeaders = useMemo(
-    () => ['source_file', ...allHeaders],
-    [allHeaders],
+    for (const header of file.headers) {
+      if (!allHeaders.includes(header)) {
+        allHeaders.push(header)
+      }
+    }
+
+    for (const row of file.rows) {
+      allRows.push({
+        source_file: file.fileName,
+        ...row,
+      })
+    }
+  }
+
+  const previewHeaders = ['source_file', ...allHeaders]
+  const previewRows = allRows.slice(0, 40)
+
+  const missingColumns = expectedColumns.filter(
+    (column) => !allHeaders.includes(column),
   )
 
-  const previewRows = useMemo<PreviewRow[]>(
-    () =>
-      parsedFiles
-        .flatMap((file) =>
-          file.rows.map((row): PreviewRow => ({
-            source_file: file.fileName,
-            ...row,
-          })),
-        )
-        .slice(0, 40),
-    [parsedFiles],
-  )
+  let totalDistance = 0
+  let speedCount = 0
+  let speedTotal = 0
+  let onCourseCount = 0
+  let onCourseTotal = 0
+  let maxDrift = 0
 
-  const totalRows = useMemo(
-    () => parsedFiles.reduce((acc, file) => acc + file.rows.length, 0),
-    [parsedFiles],
-  )
+  const speedTrend: number[] = []
+  const onCourseTrend: number[] = []
 
-  const missingColumns = useMemo(
-    () => expectedColumns.filter((column) => !allHeaders.includes(column)),
-    [allHeaders],
-  )
+  for (const row of allRows) {
+    const distance = getNumber(row, 'distance')
+    if (distance !== null) {
+      totalDistance += distance
+    }
 
-  const parsingWarnings = useMemo(
-    () =>
-      parsedFiles.flatMap((file) =>
-        file.warnings.map((warning) => `${file.fileName}: ${warning}`),
-      ),
-    [parsedFiles],
-  )
+    const avgSpeed = getNumber(row, 'avg_speed')
+    if (avgSpeed !== null) {
+      speedTotal += avgSpeed
+      speedCount += 1
+      if (speedTrend.length < 20) {
+        speedTrend.push(avgSpeed)
+      }
+    }
+
+    const onCourse = getNumber(row, 'on_course')
+    if (onCourse !== null) {
+      onCourseTotal += onCourse
+      onCourseCount += 1
+      if (onCourseTrend.length < 20) {
+        onCourseTrend.push(onCourse)
+      }
+    }
+
+    const driftMax = getNumber(row, 'drift_max')
+    const driftAvg = getNumber(row, 'drift_avg')
+    const drift = driftMax ?? driftAvg
+
+    if (drift !== null && drift > maxDrift) {
+      maxDrift = drift
+    }
+  }
+
+  const averageSpeed = speedCount > 0 ? speedTotal / speedCount : 0
+  const onCourseAverage = onCourseCount > 0 ? onCourseTotal / onCourseCount : 0
 
   const handleFileUpload = async (fileList: FileList | null): Promise<void> => {
     if (!fileList) {
@@ -90,12 +138,63 @@ function App() {
     <main className="page-shell">
       <header className="hero-header">
         <p className="eyebrow">Gait Rehab Analytics</p>
-        <h1>GaitScope Dashboard</h1>
+        <h1>Dashboard</h1>
         <p className="hero-copy">
           Upload one or more gait CSV files to generate session summaries and
           visualizations.
         </p>
       </header>
+
+      <section className="summary-grid">
+        <article className="summary-card">
+          <p>Total Distance</p>
+          <strong>{totalDistance.toFixed(3)} m</strong>
+        </article>
+        <article className="summary-card">
+          <p>Average Speed</p>
+          <strong>{averageSpeed.toFixed(3)} m/s</strong>
+        </article>
+        <article className="summary-card">
+          <p>On-Course Average</p>
+          <strong>{onCourseAverage.toFixed(2)}%</strong>
+        </article>
+        <article className="summary-card">
+          <p>Max Drift</p>
+          <strong>{maxDrift.toFixed(3)}</strong>
+        </article>
+      </section>
+
+      <section className="charts-grid">
+        <article className="chart-card">
+          <h3>Average Speed Trend (first 20 rows)</h3>
+          {speedTrend.length === 0 ? (
+            <p className="empty-message">No numeric values available yet.</p>
+          ) : (
+            <ol className="simple-trend-list">
+              {speedTrend.map((value, index) => (
+                <li key={`speed-${index}`}>
+                  Row {index + 1}: <strong>{value.toFixed(3)}</strong> m/s
+                </li>
+              ))}
+            </ol>
+          )}
+        </article>
+
+        <article className="chart-card">
+          <h3>On-Course Trend (first 20 rows)</h3>
+          {onCourseTrend.length === 0 ? (
+            <p className="empty-message">No numeric values available yet.</p>
+          ) : (
+            <ol className="simple-trend-list">
+              {onCourseTrend.map((value, index) => (
+                <li key={`oncourse-${index}`}>
+                  Row {index + 1}: <strong>{value.toFixed(2)}</strong>%
+                </li>
+              ))}
+            </ol>
+          )}
+        </article>
+      </section>
 
       <section className="card-grid">
         <article className="panel upload-panel">
