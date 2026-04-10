@@ -1,10 +1,29 @@
 import { useState } from 'react'
+import {
+  Bar,
+  BarChart,
+  CartesianGrid,
+  Line,
+  LineChart,
+  ResponsiveContainer,
+  Tooltip,
+  XAxis,
+  YAxis,
+} from 'recharts'
 import { parseCsvFile } from './lib/csv'
 import type { ParsedCsvFile } from './types/sessionData'
 import { expectedColumns } from './types/sessionData'
 import './App.css'
 
 type PreviewRow = Record<string, string>
+
+type ChartRow = {
+  row: string
+  speed: number | null
+  onCourse: number | null
+  offCourse: number | null
+  drift: number | null
+}
 
 function getNumber(row: PreviewRow, key: string): number | null {
   const rawValue = row[key]
@@ -19,6 +38,17 @@ function getNumber(row: PreviewRow, key: string): number | null {
   }
 
   return value
+}
+
+function getNumberFromKeys(row: PreviewRow, keys: string[]): number | null {
+  for (const key of keys) {
+    const value = getNumber(row, key)
+    if (value !== null) {
+      return value
+    }
+  }
+
+  return null
 }
 
 function App() {
@@ -66,39 +96,45 @@ function App() {
   let onCourseTotal = 0
   let maxDrift = 0
 
-  const speedTrend: number[] = []
-  const onCourseTrend: number[] = []
+  const chartData: ChartRow[] = []
 
-  for (const row of allRows) {
-    const distance = getNumber(row, 'distance')
+  for (let index = 0; index < allRows.length; index += 1) {
+    const row = allRows[index]
+
+    const distance = getNumberFromKeys(row, ['distance'])
     if (distance !== null) {
       totalDistance += distance
     }
 
-    const avgSpeed = getNumber(row, 'avg_speed')
+    const avgSpeed = getNumberFromKeys(row, ['avg_speed_mps', 'avg_speed'])
     if (avgSpeed !== null) {
       speedTotal += avgSpeed
       speedCount += 1
-      if (speedTrend.length < 20) {
-        speedTrend.push(avgSpeed)
-      }
     }
 
-    const onCourse = getNumber(row, 'on_course')
+    const onCourse = getNumberFromKeys(row, ['on_course_percent', 'on_course'])
     if (onCourse !== null) {
       onCourseTotal += onCourse
       onCourseCount += 1
-      if (onCourseTrend.length < 20) {
-        onCourseTrend.push(onCourse)
-      }
     }
 
-    const driftMax = getNumber(row, 'drift_max')
-    const driftAvg = getNumber(row, 'drift_avg')
+    const offCourse = getNumberFromKeys(row, ['off_course'])
+    const driftMax = getNumberFromKeys(row, ['drift_max'])
+    const driftAvg = getNumberFromKeys(row, ['drift_avg'])
     const drift = driftMax ?? driftAvg
 
     if (drift !== null && drift > maxDrift) {
       maxDrift = drift
+    }
+
+    if (chartData.length < 40) {
+      chartData.push({
+        row: `${index + 1}`,
+        speed: avgSpeed,
+        onCourse,
+        offCourse,
+        drift,
+      })
     }
   }
 
@@ -166,32 +202,74 @@ function App() {
 
       <section className="charts-grid">
         <article className="chart-card">
-          <h3>Average Speed Trend (first 20 rows)</h3>
-          {speedTrend.length === 0 ? (
+          <h3>Average Speed (first 40 rows)</h3>
+          {chartData.every((item) => item.speed === null) ? (
             <p className="empty-message">No numeric values available yet.</p>
           ) : (
-            <ol className="simple-trend-list">
-              {speedTrend.map((value, index) => (
-                <li key={`speed-${index}`}>
-                  Row {index + 1}: <strong>{value.toFixed(3)}</strong> m/s
-                </li>
-              ))}
-            </ol>
+            <div className="chart-wrap">
+              <ResponsiveContainer width="100%" height={240}>
+                <LineChart data={chartData}>
+                  <CartesianGrid strokeDasharray="3 3" />
+                  <XAxis dataKey="row" />
+                  <YAxis />
+                  <Tooltip />
+                  <Line
+                    type="monotone"
+                    dataKey="speed"
+                    stroke="#cc5c1f"
+                    strokeWidth={2}
+                    dot={false}
+                    connectNulls
+                  />
+                </LineChart>
+              </ResponsiveContainer>
+            </div>
           )}
         </article>
 
         <article className="chart-card">
-          <h3>On-Course Trend (first 20 rows)</h3>
-          {onCourseTrend.length === 0 ? (
+          <h3>On Course vs Off Course %</h3>
+          {chartData.every((item) => item.onCourse === null) ? (
             <p className="empty-message">No numeric values available yet.</p>
           ) : (
-            <ol className="simple-trend-list">
-              {onCourseTrend.map((value, index) => (
-                <li key={`oncourse-${index}`}>
-                  Row {index + 1}: <strong>{value.toFixed(2)}</strong>%
-                </li>
-              ))}
-            </ol>
+            <div className="chart-wrap">
+              <ResponsiveContainer width="100%" height={240}>
+                <BarChart data={chartData}>
+                  <CartesianGrid strokeDasharray="3 3" />
+                  <XAxis dataKey="row" />
+                  <YAxis domain={[0, 100]} />
+                  <Tooltip />
+                  <Bar dataKey="onCourse" fill="#4ea16d" />
+                  <Bar dataKey="offCourse" fill="#d57b57" />
+                </BarChart>
+              </ResponsiveContainer>
+            </div>
+          )}
+        </article>
+
+        <article className="chart-card chart-card-wide">
+          <h3>Drift Trend</h3>
+          {chartData.every((item) => item.drift === null) ? (
+            <p className="empty-message">No numeric values available yet.</p>
+          ) : (
+            <div className="chart-wrap">
+              <ResponsiveContainer width="100%" height={240}>
+                <LineChart data={chartData}>
+                  <CartesianGrid strokeDasharray="3 3" />
+                  <XAxis dataKey="row" />
+                  <YAxis />
+                  <Tooltip />
+                  <Line
+                    type="monotone"
+                    dataKey="drift"
+                    stroke="#6a6ad2"
+                    strokeWidth={2}
+                    dot={false}
+                    connectNulls
+                  />
+                </LineChart>
+              </ResponsiveContainer>
+            </div>
           )}
         </article>
       </section>
