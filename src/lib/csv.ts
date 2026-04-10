@@ -2,14 +2,23 @@ import Papa, { type ParseResult } from 'papaparse'
 import type { ParsedCsvFile } from '../types/sessionData'
 
 const aliasMap: Record<string, string> = {
-  completio: 'completion',
-  completion_status: 'completion',
+  timestamp: 'timestamp_utc',
+  timestamp_local: 'timestamp_utc',
+  completion: 'completion_title',
+  completio: 'completion_title',
+  completion_status: 'completion_title',
+  completion_title_name: 'completion_title',
   distance_e: 'distance',
   distance_m: 'distance',
+  avg_speed: 'avg_speed_mps',
+  avg_speed_m_s: 'avg_speed_mps',
   pace_s_pe: 'pace_s_per',
   pace_s_per_m: 'pace_s_per',
+  on_course: 'on_course_percent',
+  on_course_pct: 'on_course_percent',
+  on_course_p: 'on_course_percent',
+  off_course_percent: 'off_course',
   off_course_pct: 'off_course',
-  off_course_p: 'off_course',
   off_course_t: 'off_course_drift',
   drift_avg_r: 'drift_avg',
   drift_max_: 'drift_max',
@@ -36,8 +45,24 @@ export const canonicalizeHeader = (header: string): string => {
     return 'distance'
   }
 
+  if (key.startsWith('timestamp')) {
+    return 'timestamp_utc'
+  }
+
+  if (key.startsWith('completion')) {
+    return 'completion_title'
+  }
+
+  if (key.startsWith('avg_speed')) {
+    return 'avg_speed_mps'
+  }
+
   if (key.startsWith('pace_s_per')) {
     return 'pace_s_per'
+  }
+
+  if (key.startsWith('on_course')) {
+    return 'on_course_percent'
   }
 
   if (key.startsWith('off_course_drift')) {
